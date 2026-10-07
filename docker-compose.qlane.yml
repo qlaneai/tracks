@@ -1,0 +1,63 @@
+# qlane test target: builds Tracks from source in an ephemeral sandbox.
+# Sandboxes are discarded after each run and unreachable externally.
+# Docs: https://docs.qlane.ai/connect/docker-compose
+#
+# Differences from the upstream docker-compose.yml: the site config is mounted from a literal
+# source (no ${VOLUME:-.}); there is no whole-repo mount over /app, so the image's own copy runs;
+# environment values are literals, except the secret and the passwords, which come from the test
+# target's variables; web waits for a healthy db; and web creates the schema before the server
+# starts. open_signups keeps the app's committed value (config/site.docker.yml).
+
+services:
+  web:
+    image: tracks-pr:qlane
+    pull_policy: build
+    build:
+      context: .
+      target: production
+    # docker-entrypoint.sh (the image's ENTRYPOINT) exports the DATABASE_* variables
+    # config/database.yml reads, then execs this. db:prepare loads db/schema.rb into the empty
+    # database on first boot and is a no-op once the schema exists.
+    command: ["sh", "-c", "bin/rails db:prepare && exec bin/rails server -b 0.0.0.0"]
+    environment:
+      - RAILS_ENV=production
+      - DATABASE_NAME=tracks
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD_EMPTY=1
+      # Secrets come from the test target's variables (see .env.example); the stack refuses to
+      # start without them. Rails 7.2 no longer reads config/secrets.yml, so the site config's
+      # secret_token never reaches production and boot needs SECRET_KEY_BASE.
+      - SECRET_KEY_BASE=${SECRET_KEY_BASE:?Set SECRET_KEY_BASE (64 or more characters) on the test target}
+      # The logins script/qlane_seed.rb creates (passwords of 5 to 72 characters).
+      - QA_PASSWORD=${QA_PASSWORD:?Set QA_PASSWORD (5 to 72 characters) on the test target}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD (5 to 72 characters) on the test target}
+    volumes:
+      - ./config/site.docker.yml:/app/config/site.yml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    labels:
+      # `docker compose exec` does not run the image's ENTRYPOINT, so the hook calls
+      # docker-entrypoint.sh itself: without it config/database.yml has no adapter or host.
+      # script/qlane_seed.rb creates the admin first, then the non-admin `qatester` login, and is
+      # idempotent.
+      ai.qlane.postdeploy: "./docker-entrypoint.sh bin/rails runner script/qlane_seed.rb"
+
+  db:
+    image: mariadb:lts
+    environment:
+      - MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=1
+      - MARIADB_DATABASE=tracks
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
