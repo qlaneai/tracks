@@ -11,6 +11,11 @@
 # open_signups: false sees the "no signups" page at /signup. User validates a login of 3 to 80
 # characters, which is why the QA login is not the shorter `qa`.
 
+# No SQL in the seed's output. production.rb pins log_level :debug, so ActiveRecord would print
+# each INSERT with the user's bcrypt hash and API token into the postdeploy log, which the test
+# platform keeps; its masking covers only exact secret values, not derived ones like these.
+ActiveRecord::Base.logger = nil
+
 def ensure_user(login:, password:, admin:)
   user = User.find_by(login: login)
   if user.nil?
