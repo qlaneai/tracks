@@ -5,8 +5,9 @@
 # Differences from the upstream docker-compose.yml: the site config is mounted from a literal
 # source (no ${VOLUME:-.}); there is no whole-repo mount over /app, so the image's own copy runs;
 # environment values are literals, except the secret and the passwords, which come from the test
-# target's variables; web waits for a healthy db; and web creates the schema before the server
-# starts. open_signups keeps the app's committed value (config/site.docker.yml).
+# target's variables; web waits for a healthy db; web creates the schema before the server
+# starts; and web assumes https (RAILS_ASSUME_SSL), because the sandbox is reached through a
+# TLS-terminating edge. open_signups keeps the app's committed value (config/site.docker.yml).
 
 services:
   web:
@@ -24,6 +25,11 @@ services:
       - DATABASE_NAME=tracks
       - DATABASE_USERNAME=root
       - DATABASE_PASSWORD_EMPTY=1
+      # The sandbox's public URL is https at an edge that terminates TLS and forwards plain http
+      # with no X-Forwarded-Proto, and it does not serve http at all. Without this, Rails builds
+      # redirects as http://<public host>/... (/ -> /login -> /signup on a fresh install), which
+      # the edge refuses. Any deployment behind a TLS-terminating proxy needs the same setting.
+      - RAILS_ASSUME_SSL=1
       # Secrets come from the test target's variables (see .env.example); the stack refuses to
       # start without them. Rails 7.2 no longer reads config/secrets.yml, so the site config's
       # secret_token never reaches production and boot needs SECRET_KEY_BASE.

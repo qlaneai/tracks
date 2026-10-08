@@ -46,6 +46,12 @@ Rails.application.configure do
   # config.action_cable.url = 'wss://example.com/cable'
   # config.action_cable.allowed_request_origins = [ 'http://example.com', /http:\/\/example.*/ ]
 
+  # Behind a reverse proxy that terminates TLS and forwards plain http without an
+  # X-Forwarded-Proto header, set RAILS_ASSUME_SSL=1 so redirects and generated URLs use
+  # https. Without it Rails sees http and redirects to http://<public host>/..., which the
+  # proxy may not serve at all.
+  config.assume_ssl = %w[1 true yes].include?(ENV.fetch("RAILS_ASSUME_SSL", "").downcase)
+
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   # config.force_ssl = true
 
